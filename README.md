@@ -5,7 +5,7 @@
 
 
 <div align="center">
-  <img src="shared/commiunity-banner.png" width="60%" alt="DeepSeek AI" />
+  <img src="media/community-banner.png" width="60%" alt="Claude Code STHLM" />
 </div>
 
 <hr>
