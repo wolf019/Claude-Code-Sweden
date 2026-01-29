@@ -104,11 +104,16 @@ weightFactor: function (size) {
 - `gridSize: 8` - Compact word spacing
 - `fontFamily: 'Arial, sans-serif'` - Web-safe font
 - `fontWeight: 'bold'` - Improved readability
-- `rotateRatio: 0.3` - 30% words rotated
-- `minSize: 12` - Allow smaller words
+- `rotateRatio: 0.1` - **IMPORTANT: Keep low (10%) for readability. Higher values cause vertical stacking.**
+- `minSize: 16` - Minimum readable size
 - `shrinkToFit: true` - Ensure all words fit
 - `drawOutOfBound: false` - Keep words in canvas
 - `hover: null` - Disable hover effects (not needed for live demo)
+
+**CRITICAL Implementation Notes:**
+- **Font scaling must use min/max normalization**: Calculate minCount and maxCount from word list, then scale linearly between 20px and 80px. Do NOT use `Math.pow(size, 1.2)` - this produces barely visible size differences.
+- **Use the real wordcloud2.js library**: Download from https://github.com/timdream/wordcloud2.js - do not write a simplified implementation, it will have placement/collision issues.
+- **Rotation causes readability issues**: Keep rotateRatio at 0.1 or lower. Values like 0.3 cause words to stack vertically and overlap.
 
 **Graceful Degradation (Canvas Fallback):**
 - If `WordCloud` library unavailable or Canvas fails, render word list instead
