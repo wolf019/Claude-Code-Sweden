@@ -60,12 +60,13 @@ gcloud run deploy $SERVICE_NAME \
   --project $PROJECT_ID \
   --allow-unauthenticated \
   --set-env-vars "NODE_ENV=production,GCP_PROJECT_ID=$PROJECT_ID" \
-  --min-instances 1 \
-  --max-instances 10 \
-  --memory 512Mi \
+  --min-instances 2 \
+  --max-instances 20 \
+  --memory 1Gi \
   --cpu 1 \
   --timeout 300 \
-  --port 8080
+  --port 8080 \
+  --concurrency 40
 
 # Get the service URL
 SERVICE_URL=$(gcloud run services describe $SERVICE_NAME \
@@ -103,11 +104,31 @@ echo "3. Generate QR code for audience"
 
 ### Completion Notes
 Story 010 completed. Deployment scripts ready:
-- **deploy.sh** - Deploys to Cloud Run with production settings (min-instances=1, 512Mi memory)
+- **deploy.sh** - Deploys to Cloud Run with production settings
 - **setup-firestore.sh** - Creates Firestore database in europe-north1 (idempotent)
 - **local-dev.sh** - Starts local development with hot reload via nodemon
 - All scripts use environment variables for project configuration
 - Deploy script outputs service URL and QR code generation link
+
+### Scaling Configuration (Updated 2026-01-30)
+After live event testing with ~60 concurrent users, the following scaling issues were identified and fixed:
+
+**Problem:** Only ~25 of 60 users could connect. Remaining users stuck on login.
+
+**Root Cause:** Single container bottleneck with WebSocket connections:
+- Original config had `min-instances=1`, causing cold start delays during traffic surge
+- WebSocket connections are long-lived and count against concurrency limits
+- Default concurrency (80) combined with 512Mi memory caused resource exhaustion
+
+**Solution - Updated Cloud Run settings:**
+| Setting | Before | After | Why |
+|---------|--------|-------|-----|
+| `--min-instances` | 1 | 2 | Always have warm instances ready |
+| `--max-instances` | 10 | 20 | More scaling headroom |
+| `--memory` | 512Mi | 1Gi | Handle more concurrent connections |
+| `--concurrency` | (default 80) | 40 | Force load distribution across instances |
+
+**Key insight:** `--concurrency 40` is critical for WebSocket apps. It tells Cloud Run to spin up additional instances after 40 connections, ensuring 60 users get distributed across 2+ instances.
 
 ---
 
@@ -121,3 +142,4 @@ Story 010 completed. Deployment scripts ready:
 
 ## Change Log
 - 2026-01-29: Story 010 completed - All deployment scripts created
+- 2026-01-30: Updated Cloud Run scaling config after live event (60 users) - increased min-instances to 2, memory to 1Gi, added concurrency=40
