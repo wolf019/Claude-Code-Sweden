@@ -5,14 +5,15 @@
 RATE_LIMIT_LOG="${RATE_LIMIT_LOG:-$HOME/ralph-rate-limits.log}"
 
 RATE_LIMIT_PATTERNS=(
-    "rate.limit"
-    "too.many.requests"
-    "quota.exceeded"
-    "capacity"
-    "try.again.later"
+    "rate limit exceeded"
+    "rate_limit_error"
+    "too many requests"
+    "quota exceeded"
+    "over capacity"
+    "try again later"
     "retry.after"
-    "429"
-    "overloaded"
+    "error.*429"
+    "API.*overloaded"
 )
 
 # Check if output indicates rate limiting
