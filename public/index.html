@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Wordcloud</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <div class="container-fluid min-vh-100 d-flex flex-column">
+    <!-- Join Screen -->
+    <div id="join-screen" class="row flex-grow-1 justify-content-center align-items-center">
+      <div class="col-11 col-sm-8 col-md-6 col-lg-4">
+        <div class="card neon-card">
+          <div class="card-body p-4">
+            <h1 class="text-center mb-4 neon-title">Join Session</h1>
+            <form id="join-form" novalidate>
+              <div class="mb-3">
+                <label for="name-input" class="form-label">Your Name</label>
+                <input
+                  type="text"
+                  class="form-control neon-input touch-target"
+                  id="name-input"
+                  placeholder="Enter your name"
+                  minlength="2"
+                  maxlength="50"
+                  required
+                  autocomplete="name"
+                  aria-describedby="name-help"
+                >
+                <div id="name-help" class="form-text">2-50 characters</div>
+                <div class="invalid-feedback">Please enter a name (2-50 characters)</div>
+              </div>
+              <button type="submit" class="btn btn-primary w-100 neon-btn touch-target" id="join-btn">
+                Join Session
+              </button>
+            </form>
+            <div id="join-error" class="alert alert-danger mt-3 d-none" role="alert"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Vote Screen (hidden by default) -->
+    <div id="vote-screen" class="row flex-grow-1 d-none">
+      <!-- Left Panel: Voting Form -->
+      <div id="left-panel" class="col-12 col-lg-4 p-3 d-flex flex-column">
+        <div class="card neon-card flex-grow-1">
+          <div class="card-body d-flex flex-column p-4">
+            <div class="mb-3">
+              <span class="badge neon-badge" id="connection-status">
+                <span class="status-dot"></span>
+                Connected
+              </span>
+              <span class="badge bg-secondary ms-2" id="participant-count">0 participants</span>
+            </div>
+
+            <h2 class="neon-subtitle mb-3" id="question">Loading question...</h2>
+
+            <form id="vote-form" class="mt-auto" novalidate>
+              <div class="mb-3">
+                <label for="word-input" class="form-label visually-hidden">Your word or phrase</label>
+                <input
+                  type="text"
+                  class="form-control neon-input touch-target"
+                  id="word-input"
+                  placeholder="Enter your word or phrase"
+                  maxlength="50"
+                  required
+                  autocomplete="off"
+                >
+                <div class="invalid-feedback">Please enter a word (1-50 characters)</div>
+              </div>
+              <button type="submit" class="btn btn-accent w-100 neon-btn touch-target" id="submit-btn">
+                Submit Vote
+              </button>
+            </form>
+
+            <div id="vote-feedback" class="alert mt-3 d-none" role="status" aria-live="polite"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Panel: Wordcloud -->
+      <div id="right-panel" class="col-12 col-lg-8 p-3 d-flex flex-column">
+        <div class="card neon-card flex-grow-1 position-relative">
+          <div class="card-body d-flex flex-column p-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h2 class="neon-subtitle mb-0" id="wordcloud-question">Loading question...</h2>
+              <button
+                type="button"
+                class="btn btn-outline-light neon-btn-outline touch-target"
+                id="fullscreen-btn"
+                aria-label="Toggle fullscreen mode"
+                title="Toggle fullscreen"
+              >
+                <svg id="fullscreen-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+                </svg>
+                <svg id="exit-fullscreen-icon" class="d-none" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/>
+                </svg>
+              </button>
+            </div>
+            <div id="wordcloud-container" class="flex-grow-1 d-flex justify-content-center align-items-center">
+              <p class="text-muted">Waiting for votes...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/lib/wordcloud2.js"></script>
+  <script src="/js/wordcloud-renderer.js"></script>
+  <script src="/js/client.js"></script>
+</body>
+</html>
