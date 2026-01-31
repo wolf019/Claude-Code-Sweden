@@ -3,7 +3,7 @@
 # Source this file: source lib/spec-utils.sh
 
 CHECKSUM_DIR="${CHECKSUM_DIR:-.spec-checksums}"
-SPECS_DIR="${SPECS_DIR:-specs}"
+SPECS_DIR="${SPECS_DIR:-.ralph-specs}"
 
 # Get next incomplete spec
 next_incomplete_spec() {
