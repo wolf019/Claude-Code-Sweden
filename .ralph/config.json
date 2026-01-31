@@ -1,0 +1,20 @@
+{
+  "version": "1.0.14",
+  "language": "en",
+  "provider": "gcloud",
+  "vm_name": "ralph-sandbox",
+  "region": "europe-north1-a",
+  "vm_ip": "",
+  "user": "tomaxberg",
+  "notifications": {
+    "ntfy_enabled": true,
+    "ntfy_topic": "ralph-1769854768085"
+  },
+  "github": {
+    "username": "wolf019"
+  },
+  "agent": "claude",
+  "claude": {
+    "auth_method": "subscription"
+  }
+}
