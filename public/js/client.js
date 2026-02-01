@@ -304,6 +304,7 @@
    * Handle question update
    */
   function handleQuestionUpdated(data) {
+    console.log('[CLIENT] Received question-updated:', data);
     if (data.question) {
       updateQuestion(data.question);
     }
@@ -342,10 +343,25 @@
 
   /**
    * Handle session reset
+   * Fetches the new question from server (Firestore) to handle multi-instance Cloud Run
    */
-  function handleSessionReset() {
+  async function handleSessionReset() {
     // Clear the wordcloud by rendering empty words
     renderWordcloud([]);
+
+    // Fetch the current question from server (reads from Firestore, works across instances)
+    try {
+      const res = await fetch('/admin/stats');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.currentQuestion) {
+          console.log('[CLIENT] Fetched question from server:', data.currentQuestion);
+          updateQuestion(data.currentQuestion);
+        }
+      }
+    } catch (error) {
+      console.error('[CLIENT] Failed to fetch question:', error);
+    }
   }
 
   /**

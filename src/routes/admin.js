@@ -21,9 +21,11 @@ router.post('/question', async (req, res) => {
   }
 
   const trimmedQuestion = question.trim();
+  console.log(`[ADMIN] Creating session with question: "${trimmedQuestion}"`);
 
   // Create new session in Firestore (deactivates old one)
   const session = await createSession(trimmedQuestion);
+  console.log(`[ADMIN] Session created: ${session.sessionId}`);
 
   // Update in-memory for this instance
   sessionData.question = trimmedQuestion;
@@ -32,6 +34,7 @@ router.post('/question', async (req, res) => {
   // Emit to all connected clients on this instance
   const io = req.app.get('io');
   if (io) {
+    console.log(`[ADMIN] Emitting question-updated: "${trimmedQuestion}"`);
     io.emit('question-updated', { question: trimmedQuestion });
     io.emit('session-reset', { timestamp: new Date().toISOString() });
   }
