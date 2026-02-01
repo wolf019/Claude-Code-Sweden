@@ -16,6 +16,7 @@ const {
   saveVote,
   getTopWords,
   isStopWord,
+  getQuestion,
 } = require('./utils/database');
 
 const app = express();
@@ -109,10 +110,14 @@ io.on('connection', (socket) => {
     // Get current wordcloud data from database for late joiners
     const words = await getTopWords(50);
 
+    // Get question from Firestore (shared across instances) or fallback to in-memory
+    const firestoreQuestion = await getQuestion();
+    const currentQuestion = firestoreQuestion || sessionData.question || 'What word comes to mind?';
+
     // Send success with current question and wordcloud state
     socket.emit('join-success', {
       name: name,
-      question: sessionData.question || 'What word comes to mind?',
+      question: currentQuestion,
       words: words,
     });
 

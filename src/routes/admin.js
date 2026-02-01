@@ -2,29 +2,35 @@
 
 const express = require('express');
 const { sessionData, resetSession, getStats } = require('../utils/storage');
-const { clearAllData, getVoteCount } = require('../utils/database');
+const { clearAllData, getVoteCount, saveQuestion } = require('../utils/database');
 
 const router = express.Router();
 
 // POST /admin/question - Set active question
-router.post('/question', (req, res) => {
+router.post('/question', async (req, res) => {
   const { question } = req.body;
 
   if (!question || typeof question !== 'string') {
     return res.status(400).json({ error: 'Question is required and must be a string' });
   }
 
-  sessionData.question = question.trim();
+  const trimmedQuestion = question.trim();
 
-  // Emit to all connected clients
+  // Save to in-memory (for this instance)
+  sessionData.question = trimmedQuestion;
+
+  // Save to Firestore (shared across instances)
+  await saveQuestion(trimmedQuestion);
+
+  // Emit to all connected clients on this instance
   const io = req.app.get('io');
   if (io) {
-    io.emit('question-updated', { question: sessionData.question });
+    io.emit('question-updated', { question: trimmedQuestion });
   }
 
   res.status(200).json({
     success: true,
-    question: sessionData.question,
+    question: trimmedQuestion,
   });
 });
 

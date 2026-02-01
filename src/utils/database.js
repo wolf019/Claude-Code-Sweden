@@ -258,6 +258,44 @@ function getStopWords() {
   return STOP_WORDS;
 }
 
+/**
+ * Save the current question to Firestore
+ * @param {string} question - The question text
+ * @returns {Promise<{success: boolean}>}
+ */
+async function saveQuestion(question) {
+  if (db) {
+    try {
+      await db.collection('config').doc('session').set({
+        question: question,
+        updatedAt: new Date(),
+      }, { merge: true });
+      return { success: true };
+    } catch (error) {
+      console.error('Firestore saveQuestion error:', error.message);
+    }
+  }
+  return { success: false };
+}
+
+/**
+ * Get the current question from Firestore
+ * @returns {Promise<string|null>}
+ */
+async function getQuestion() {
+  if (db) {
+    try {
+      const doc = await db.collection('config').doc('session').get();
+      if (doc.exists) {
+        return doc.data().question || null;
+      }
+    } catch (error) {
+      console.error('Firestore getQuestion error:', error.message);
+    }
+  }
+  return null;
+}
+
 // Initialize on module load
 initializeFirestore();
 
@@ -272,6 +310,8 @@ module.exports = {
   getVoteCount,
   isFirestoreConnected,
   getStopWords,
+  saveQuestion,
+  getQuestion,
   // Export for testing
   _inMemoryVotes: inMemoryVotes,
   _inMemoryWordCounts: inMemoryWordCounts,
