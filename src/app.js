@@ -34,6 +34,12 @@ app.set('io', io);
 // Track connected clients
 let connectedClients = 0;
 
+// Track participant names (socket.id -> name)
+const participantNames = new Map();
+
+// Admin name constant
+const ADMIN_NAME = 'admin-123';
+
 // Rate limiting: track last vote timestamp per socket ID
 const rateLimitMap = new Map();
 const RATE_LIMIT_MS = 5000; // 5 seconds between votes
@@ -48,6 +54,15 @@ let pendingBroadcast = false;
  * Aggregates rapid updates within 100ms window
  * Uses database for persistent word counts
  */
+/**
+ * Broadcast participant list to admin users
+ */
+function broadcastParticipantList() {
+  const participants = Array.from(participantNames.values())
+    .filter(name => name !== ADMIN_NAME); // Don't show admin in the list
+  io.emit('participant-list', { participants });
+}
+
 function broadcastWordcloudUpdate() {
   pendingBroadcast = true;
 
@@ -85,9 +100,11 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Store participant info on socket
+    // Store participant info on socket and in map
     socket.userName = name;
+    socket.isAdmin = name === ADMIN_NAME;
     sessionData.participants.add(socket.id);
+    participantNames.set(socket.id, name);
 
     // Get current wordcloud data from database for late joiners
     const words = await getTopWords(50);
@@ -99,7 +116,10 @@ io.on('connection', (socket) => {
       words: words,
     });
 
-    console.log(`User joined: ${name} (${socket.id})`);
+    // Broadcast updated participant list to all (admin will display it)
+    broadcastParticipantList();
+
+    console.log(`User joined: ${name} (${socket.id})${socket.isAdmin ? ' [ADMIN]' : ''}`);
   });
 
   // Handle vote event
@@ -170,6 +190,10 @@ io.on('connection', (socket) => {
 
     // Remove from participants
     sessionData.participants.delete(socket.id);
+    participantNames.delete(socket.id);
+
+    // Broadcast updated participant list
+    broadcastParticipantList();
   });
 
   socket.on('error', (error) => {

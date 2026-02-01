@@ -26,13 +26,94 @@
   const exitFullscreenIcon = document.getElementById('exit-fullscreen-icon');
   const leftPanel = document.getElementById('left-panel');
   const rightPanel = document.getElementById('right-panel');
+  const adminPanel = document.getElementById('admin-panel');
+  const userPanel = document.getElementById('user-panel');
+  const participantList = document.getElementById('participant-list');
+  const nextQuestionForm = document.getElementById('next-question-form');
+  const nextQuestionInput = document.getElementById('next-question-input');
+  const nextQuestionBtn = document.getElementById('next-question-btn');
+  const adminFeedback = document.getElementById('admin-feedback');
 
   // State
   let socket = null;
   let isConnected = false;
   let isFullscreen = false;
+  let isAdmin = false;
   let participantName = '';
   let submitTimeout = null;
+  let previousParticipants = [];
+
+  // Admin credentials
+  const ADMIN_NAME = 'admin-123';
+
+  /**
+   * Create floating animation
+   * @param {string} text - The text to animate
+   * @param {string} color - The color (default green)
+   * @param {string} position - 'left', 'center', or 'right'
+   */
+  function createFloatingText(text, color, position) {
+    if (typeof anime === 'undefined' || !anime.animate) return;
+
+    var animateFn = anime.animate;
+
+    // Default color
+    color = color || '#84fba2';
+
+    // Create floating element
+    const floater = document.createElement('div');
+    floater.className = 'floating-text';
+    floater.textContent = text;
+    floater.style.cssText = `
+      position: fixed;
+      font-size: 1.5rem;
+      font-weight: bold;
+      color: ${color};
+      text-shadow: 0 0 10px ${color}80;
+      pointer-events: none;
+      z-index: 1000;
+      opacity: 0;
+    `;
+
+    // Position based on parameter
+    let startX;
+    if (position === 'center') {
+      startX = window.innerWidth / 2 - 50;
+    } else if (position === 'right') {
+      startX = window.innerWidth * 0.6 + Math.random() * 100;
+    } else {
+      // left (default)
+      startX = 50 + Math.random() * 100;
+    }
+    const startY = window.innerHeight * 0.3 + Math.random() * (window.innerHeight * 0.4);
+    floater.style.left = startX + 'px';
+    floater.style.top = startY + 'px';
+
+    document.body.appendChild(floater);
+
+    // Animate with anime.js v4
+    animateFn(floater, {
+      translateX: [0, 30 + Math.random() * 50],
+      translateY: [0, -100 - Math.random() * 100],
+      opacity: [0, 1, 1, 0],
+      scale: [0.5, 1.2, 1],
+      rotate: [-10 + Math.random() * 20, 0],
+      duration: 2500,
+      ease: 'outQuart',
+      onComplete: function() {
+        floater.remove();
+      }
+    });
+  }
+
+  /**
+   * Create floating name animation (admin only)
+   * @param {string} name - The name to animate
+   */
+  function createFloatingName(name) {
+    if (!isAdmin) return;
+    createFloatingText(name, '#84fba2', 'left');
+  }
 
   // Rate limiting: 5 seconds between votes
   const RATE_LIMIT_MS = 5000;
@@ -62,6 +143,7 @@
     socket.on('question-updated', handleQuestionUpdated);
     socket.on('wordcloud-update', handleWordcloudUpdate);
     socket.on('session-reset', handleSessionReset);
+    socket.on('participant-list', handleParticipantList);
   }
 
   /**
@@ -108,23 +190,57 @@
    */
   function handleJoinSuccess(data) {
     participantName = data.name || participantName;
+    isAdmin = participantName === ADMIN_NAME;
 
     // Switch to vote screen
     joinScreen.classList.add('d-none');
     voteScreen.classList.remove('d-none');
+
+    if (isAdmin) {
+      // Admin view: show wordcloud + participant list, hide vote form
+      adminPanel.classList.remove('d-none');
+      adminPanel.classList.add('d-flex');
+      userPanel.classList.add('d-none');
+      voteForm.classList.add('d-none');
+      rightPanel.classList.remove('d-none');
+    } else {
+      // Regular user: show vote form, hide wordcloud
+      adminPanel.classList.add('d-none');
+      userPanel.classList.remove('d-none');
+      voteForm.classList.remove('d-none');
+      rightPanel.classList.add('d-none');
+      // Make left panel full width for non-admin
+      leftPanel.classList.remove('col-lg-4');
+      leftPanel.classList.add('col-lg-12');
+      // Remove flex-grow to prevent huge gap on mobile
+      leftPanel.classList.remove('flex-grow-1');
+      const card = leftPanel.querySelector('.card');
+      const cardBody = leftPanel.querySelector('.card-body');
+      if (card) card.classList.remove('flex-grow-1');
+      if (cardBody) cardBody.classList.remove('flex-grow-1', 'd-flex', 'flex-column');
+      // Remove mt-auto from form so it sits right under the question
+      voteForm.classList.remove('mt-auto');
+      voteForm.classList.add('mt-3');
+    }
 
     // Update question if provided
     if (data.question) {
       updateQuestion(data.question);
     }
 
-    // Render wordcloud if words are provided
-    if (data.words) {
+    // Render wordcloud if words are provided (admin only sees it)
+    if (data.words && isAdmin) {
       renderWordcloud(data.words);
     }
 
-    // Focus word input
-    wordInput.focus();
+    // For regular users: scroll to top, then focus input
+    if (!isAdmin) {
+      window.scrollTo(0, 0);
+      // Small delay to let scroll complete before focusing
+      setTimeout(() => {
+        wordInput.focus({ preventScroll: true });
+      }, 100);
+    }
   }
 
   /**
@@ -141,7 +257,8 @@
    * Handle successful vote
    */
   function handleVoteSuccess(data) {
-    showVoteFeedback('Submitted!', 'success');
+    // Floating animation instead of alert
+    createFloatingText('Submitted!', '#84fba2', 'center');
     wordInput.value = '';
     submitBtn.textContent = 'Submit Vote';
 
@@ -149,7 +266,7 @@
     submitBtn.disabled = true;
     submitTimeout = setTimeout(() => {
       submitBtn.disabled = false;
-      wordInput.focus();
+      wordInput.focus({ preventScroll: true });
     }, RATE_LIMIT_MS);
   }
 
@@ -205,7 +322,8 @@
    * @param {Object} data - Contains words array of [word, count] tuples
    */
   function handleWordcloudUpdate(data) {
-    if (data && data.words) {
+    // Only render wordcloud for admin
+    if (isAdmin && data && data.words) {
       renderWordcloud(data.words);
     }
   }
@@ -228,6 +346,36 @@
   function handleSessionReset() {
     // Clear the wordcloud by rendering empty words
     renderWordcloud([]);
+  }
+
+  /**
+   * Handle participant list update (admin only)
+   */
+  function handleParticipantList(data) {
+    if (!isAdmin || !participantList) return;
+
+    const participants = data.participants || [];
+
+    // Find new participants and animate them
+    const newParticipants = participants.filter(name => !previousParticipants.includes(name));
+    newParticipants.forEach(name => {
+      createFloatingName(name + ' joined!');
+    });
+
+    // Update previous list
+    previousParticipants = [...participants];
+
+    // Render participant list
+    participantList.innerHTML = '';
+    participants.forEach(function (name) {
+      const li = document.createElement('li');
+      li.className = 'list-group-item';
+      li.style.background = 'rgba(53, 45, 62, 0.9)';
+      li.style.color = '#f8f8f2';
+      li.style.borderColor = 'rgba(189, 147, 249, 0.3)';
+      li.textContent = name;
+      participantList.appendChild(li);
+    });
   }
 
   /**
@@ -350,6 +498,58 @@
   }
 
   /**
+   * Handle next question form submission (admin only)
+   */
+  async function handleNextQuestionSubmit(event) {
+    event.preventDefault();
+
+    const question = nextQuestionInput.value.trim();
+    if (!question) {
+      showAdminFeedback('Please enter a question', 'warning');
+      return;
+    }
+
+    nextQuestionBtn.disabled = true;
+    nextQuestionBtn.textContent = 'Updating...';
+
+    try {
+      // First reset all words
+      const resetRes = await fetch('/admin/reset', { method: 'POST' });
+      if (!resetRes.ok) throw new Error('Failed to reset');
+
+      // Then change the question
+      const questionRes = await fetch('/admin/question', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: question })
+      });
+      if (!questionRes.ok) throw new Error('Failed to change question');
+
+      // Floating animation for success
+      createFloatingText('Question updated!', '#ff8adb', 'left');
+      nextQuestionInput.value = '';
+    } catch (error) {
+      createFloatingText('Error: ' + error.message, '#ff6b6b', 'left');
+    } finally {
+      nextQuestionBtn.disabled = false;
+      nextQuestionBtn.textContent = 'Reset & Change Question';
+    }
+  }
+
+  /**
+   * Show admin feedback message
+   */
+  function showAdminFeedback(message, type) {
+    if (!adminFeedback) return;
+    adminFeedback.textContent = message;
+    adminFeedback.className = `alert alert-${type} mt-2`;
+    adminFeedback.classList.remove('d-none');
+    setTimeout(() => {
+      adminFeedback.classList.add('d-none');
+    }, 3000);
+  }
+
+  /**
    * Initialize event listeners
    */
   function initEventListeners() {
@@ -358,6 +558,11 @@
     nameInput.addEventListener('input', handleNameInput);
     wordInput.addEventListener('input', handleWordInput);
     fullscreenBtn.addEventListener('click', toggleFullscreen);
+
+    // Admin: next question form
+    if (nextQuestionForm) {
+      nextQuestionForm.addEventListener('submit', handleNextQuestionSubmit);
+    }
 
     // Keyboard shortcut for fullscreen (Escape to exit)
     document.addEventListener('keydown', (event) => {

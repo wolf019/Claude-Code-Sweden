@@ -1,5 +1,10 @@
 /* Lazer Wave Theme - Live Wordcloud */
 
+/* Ensure d-none works (fallback for Bootstrap) */
+.d-none {
+  display: none !important;
+}
+
 :root {
   --lw-bg: #27212e;
   --lw-bg-light: #352d3e;
@@ -53,6 +58,13 @@ body {
   text-shadow: 0 0 8px rgba(255, 138, 219, 0.4);
   font-weight: 600;
   font-size: 1.25rem;
+}
+
+/* Large question text for user view and admin view */
+#question,
+#wordcloud-question {
+  font-size: 3rem;
+  line-height: 1.2;
 }
 
 /* Neon input styling */

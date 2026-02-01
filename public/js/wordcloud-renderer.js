@@ -86,7 +86,7 @@ var WordcloudRenderer = (function () {
     try {
       WordCloud(canvas, {
         list: topWords,
-        gridSize: 8,
+        gridSize: 4, // Smaller grid = more precise placement, fits more words
         fontFamily: 'Arial, sans-serif',
         fontWeight: 'bold',
         color: getRandomColor,
@@ -97,14 +97,27 @@ var WordcloudRenderer = (function () {
         drawOutOfBound: false,
         hover: null,
         weightFactor: function (size) {
-          // Scale sizes: single vote = 16px, max votes = 60px
-          if (maxCount === minCount) {
-            // All words have same count - make them medium size
-            return 24;
+          // Scale sizes based on count
+          // Use log scaling to prevent large count differences from dominating
+          var baseSize = 36;
+          var maxSize = 100;
+
+          if (maxCount <= 1) {
+            return 48; // Single votes get medium size
           }
-          // Map count to font size range (16px to 60px)
-          var ratio = (size - minCount) / (maxCount - minCount);
-          return 16 + ratio * 44;
+
+          // Log-based scaling: size grows with log of count
+          // This ensures 1 vote vs 2 votes isn't a huge visual difference
+          var logMin = Math.log(minCount + 1);
+          var logMax = Math.log(maxCount + 1);
+          var logSize = Math.log(size + 1);
+
+          if (logMax === logMin) {
+            return 48;
+          }
+
+          var ratio = (logSize - logMin) / (logMax - logMin);
+          return baseSize + ratio * (maxSize - baseSize);
         },
       });
     } catch (e) {
