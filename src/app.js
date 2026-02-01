@@ -163,8 +163,8 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Store the vote in database (with atomic word count increment)
-    const { word: storedWord } = await saveVote(normalizedWord, socket.id);
+    // Store the vote in database (with visitor name for history)
+    const { word: storedWord } = await saveVote(normalizedWord, socket.userName, socket.id);
 
     // Also store in session for backwards compatibility
     sessionData.votes.push({

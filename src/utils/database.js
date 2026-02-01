@@ -1,34 +1,46 @@
 'use strict';
 
 /**
- * Database module for Firestore integration with in-memory fallback
- * Provides persistent storage for votes with atomic word count increments
+ * Database module for Firestore with history-based sessions
+ * Each question creates a new session with its own votes
+ *
+ * Structure:
+ * sessions/
+ *   {sessionId}/
+ *     question: string
+ *     createdAt: timestamp
+ *     isActive: boolean
+ *     wordCounts: { WORD: count, ... }
+ *     votes/ (subcollection)
+ *       {voteId}/
+ *         name: string
+ *         word: string
+ *         timestamp: timestamp
  */
 
-const { Firestore } = require('@google-cloud/firestore');
+const { Firestore, FieldValue } = require('@google-cloud/firestore');
+
+// Database configuration
+const DATABASE_ID = process.env.FIRESTORE_DATABASE_ID || 'wordcloud-live';
 
 // Stop words to filter from wordcloud
 const STOP_WORDS = new Set([
-  'the',
-  'a',
-  'an',
-  'is',
-  'are',
-  'and',
-  'or',
-  'but',
+  'the', 'a', 'an', 'is', 'are', 'and', 'or', 'but',
 ]);
 
 // In-memory fallback storage
-const inMemoryVotes = [];
-const inMemoryWordCounts = new Map();
+let inMemorySession = {
+  id: 'local',
+  question: 'What word comes to mind?',
+  wordCounts: {},
+  votes: [],
+};
 
 // Firestore client (null if not available)
 let db = null;
 
 /**
  * Initialize Firestore client
- * Falls back to in-memory storage if Firestore is unavailable
  */
 function initializeFirestore() {
   const projectId = process.env.GCP_PROJECT_ID;
@@ -39,8 +51,11 @@ function initializeFirestore() {
   }
 
   try {
-    db = new Firestore({ projectId });
-    console.log(`Firestore initialized for project: ${projectId}`);
+    db = new Firestore({
+      projectId,
+      databaseId: DATABASE_ID,
+    });
+    console.log(`Firestore initialized: ${projectId}/${DATABASE_ID}`);
     return db;
   } catch (error) {
     console.error('Failed to initialize Firestore:', error.message);
@@ -51,8 +66,6 @@ function initializeFirestore() {
 
 /**
  * Check if a word is a stop word
- * @param {string} word - The word to check (will be lowercased for comparison)
- * @returns {boolean} - True if it's a stop word
  */
 function isStopWord(word) {
   if (typeof word !== 'string') return false;
@@ -60,240 +73,256 @@ function isStopWord(word) {
 }
 
 /**
- * Normalize word for storage and aggregation
- * Converts to uppercase, trims, and strips punctuation
- * @param {string} word - The word to normalize
- * @returns {string} - The normalized word in uppercase
+ * Normalize word for storage (uppercase, trimmed)
  */
 function normalizeForStorage(word) {
   if (typeof word !== 'string') return '';
-  return word
-    .trim()
-    .replace(/[.,!?'-]/g, '')
-    .toUpperCase();
+  return word.trim().replace(/[.,!?'-]/g, '').toUpperCase();
 }
 
 /**
- * Save a vote and increment word count atomically
- * @param {string} word - The word being voted for (already normalized)
- * @param {string} sessionId - The socket/session ID of the voter
+ * Create a new session with a question
+ * @param {string} question - The question for this session
+ * @returns {Promise<{sessionId: string, question: string}>}
+ */
+async function createSession(question) {
+  const timestamp = new Date();
+
+  if (db) {
+    try {
+      // Deactivate any existing active sessions
+      const activeSnapshot = await db.collection('sessions')
+        .where('isActive', '==', true)
+        .get();
+
+      const batch = db.batch();
+      activeSnapshot.docs.forEach(doc => {
+        batch.update(doc.ref, { isActive: false });
+      });
+
+      // Create new session
+      const sessionRef = db.collection('sessions').doc();
+      batch.set(sessionRef, {
+        question: question,
+        createdAt: timestamp,
+        isActive: true,
+        wordCounts: {},
+      });
+
+      await batch.commit();
+
+      console.log(`Created new session: ${sessionRef.id}`);
+      return { sessionId: sessionRef.id, question: question };
+    } catch (error) {
+      console.error('Firestore createSession error:', error.message);
+    }
+  }
+
+  // In-memory fallback
+  inMemorySession = {
+    id: 'local-' + Date.now(),
+    question: question,
+    wordCounts: {},
+    votes: [],
+  };
+  return { sessionId: inMemorySession.id, question: question };
+}
+
+/**
+ * Get the current active session
+ * @returns {Promise<{sessionId: string, question: string}|null>}
+ */
+async function getActiveSession() {
+  if (db) {
+    try {
+      const snapshot = await db.collection('sessions')
+        .where('isActive', '==', true)
+        .limit(1)
+        .get();
+
+      if (!snapshot.empty) {
+        const doc = snapshot.docs[0];
+        return {
+          sessionId: doc.id,
+          question: doc.data().question,
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error('Firestore getActiveSession error:', error.message);
+    }
+  }
+
+  // In-memory fallback
+  return {
+    sessionId: inMemorySession.id,
+    question: inMemorySession.question,
+  };
+}
+
+/**
+ * Save a vote to the active session
+ * @param {string} word - The word (already normalized)
+ * @param {string} visitorName - The name of the voter
+ * @param {string} visitorId - The socket ID
  * @returns {Promise<{success: boolean, word: string}>}
  */
-async function saveVote(word, sessionId) {
+async function saveVote(word, visitorName, visitorId) {
   const normalizedWord = normalizeForStorage(word);
   const timestamp = new Date();
 
   if (db) {
     try {
-      // Use a transaction for atomic increment
-      // IMPORTANT: All reads must come before writes in Firestore transactions
-      await db.runTransaction(async (transaction) => {
-        // References
-        const voteRef = db.collection('votes').doc();
-        const wordCountRef = db.collection('wordcounts').doc(normalizedWord);
+      const session = await getActiveSession();
+      if (!session) {
+        console.error('No active session for vote');
+        return { success: false, word: normalizedWord };
+      }
 
-        // READ FIRST - get current word count
-        const wordCountDoc = await transaction.get(wordCountRef);
+      const sessionRef = db.collection('sessions').doc(session.sessionId);
 
-        // THEN WRITE - save the vote
-        transaction.set(voteRef, {
-          word: normalizedWord,
-          sessionId,
-          timestamp,
-        });
+      // Add vote to subcollection
+      await sessionRef.collection('votes').add({
+        name: visitorName,
+        word: normalizedWord,
+        visitorId: visitorId,
+        timestamp: timestamp,
+      });
 
-        // WRITE - update or create word count
-        if (wordCountDoc.exists) {
-          transaction.update(wordCountRef, {
-            count: Firestore.FieldValue.increment(1),
-            lastUpdated: timestamp,
-          });
-        } else {
-          transaction.set(wordCountRef, {
-            word: normalizedWord,
-            count: 1,
-            lastUpdated: timestamp,
-          });
-        }
+      // Increment word count in session document
+      await sessionRef.update({
+        [`wordCounts.${normalizedWord}`]: FieldValue.increment(1),
       });
 
       return { success: true, word: normalizedWord };
     } catch (error) {
       console.error('Firestore saveVote error:', error.message);
-      // Fall through to in-memory storage
     }
   }
 
   // In-memory fallback
-  inMemoryVotes.push({
+  inMemorySession.votes.push({
+    name: visitorName,
     word: normalizedWord,
-    sessionId,
-    timestamp,
+    visitorId: visitorId,
+    timestamp: timestamp,
   });
-
-  const currentCount = inMemoryWordCounts.get(normalizedWord) || 0;
-  inMemoryWordCounts.set(normalizedWord, currentCount + 1);
+  inMemorySession.wordCounts[normalizedWord] =
+    (inMemorySession.wordCounts[normalizedWord] || 0) + 1;
 
   return { success: true, word: normalizedWord };
 }
 
 /**
- * Get top words by count for wordcloud
- * @param {number} limit - Maximum number of words to return (default: 50)
- * @returns {Promise<Array<[string, number]>>} - Array of [word, count] tuples
+ * Get top words for the active session
+ * @param {number} limit - Max words to return
+ * @returns {Promise<Array<[string, number]>>}
  */
 async function getTopWords(limit = 50) {
   if (db) {
     try {
-      const snapshot = await db
-        .collection('wordcounts')
-        .orderBy('count', 'desc')
-        .limit(limit)
-        .get();
+      const session = await getActiveSession();
+      if (!session) return [];
 
-      return snapshot.docs.map((doc) => {
-        const data = doc.data();
-        return [data.word, data.count];
-      });
+      const doc = await db.collection('sessions').doc(session.sessionId).get();
+      if (!doc.exists) return [];
+
+      const wordCounts = doc.data().wordCounts || {};
+      const entries = Object.entries(wordCounts);
+      return entries
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, limit);
     } catch (error) {
       console.error('Firestore getTopWords error:', error.message);
-      // Fall through to in-memory storage
     }
   }
 
   // In-memory fallback
-  const entries = Array.from(inMemoryWordCounts.entries());
+  const entries = Object.entries(inMemorySession.wordCounts);
   return entries.sort((a, b) => b[1] - a[1]).slice(0, limit);
 }
 
 /**
- * Get all votes (for compatibility with existing code)
- * @returns {Promise<Array<{word: string, sessionId: string, timestamp: Date}>>}
+ * Get the current question
+ * @returns {Promise<string>}
  */
-async function getAllVotes() {
-  if (db) {
-    try {
-      const snapshot = await db
-        .collection('votes')
-        .orderBy('timestamp', 'desc')
-        .get();
-
-      return snapshot.docs.map((doc) => doc.data());
-    } catch (error) {
-      console.error('Firestore getAllVotes error:', error.message);
-      // Fall through to in-memory storage
-    }
-  }
-
-  // In-memory fallback
-  return [...inMemoryVotes];
+async function getQuestion() {
+  const session = await getActiveSession();
+  return session ? session.question : 'What word comes to mind?';
 }
 
 /**
- * Clear all data (votes and word counts)
- * Used for session reset
+ * Clear all sessions (for fresh start)
  * @returns {Promise<{success: boolean}>}
  */
 async function clearAllData() {
   if (db) {
     try {
-      // Delete all votes
-      const votesSnapshot = await db.collection('votes').get();
-      const votesBatch = db.batch();
-      votesSnapshot.docs.forEach((doc) => votesBatch.delete(doc.ref));
-      await votesBatch.commit();
+      const sessionsSnapshot = await db.collection('sessions').get();
 
-      // Delete all word counts
-      const wordcountsSnapshot = await db.collection('wordcounts').get();
-      const wordcountsBatch = db.batch();
-      wordcountsSnapshot.docs.forEach((doc) => wordcountsBatch.delete(doc.ref));
-      await wordcountsBatch.commit();
+      for (const sessionDoc of sessionsSnapshot.docs) {
+        // Delete votes subcollection
+        const votesSnapshot = await sessionDoc.ref.collection('votes').get();
+        const batch = db.batch();
+        votesSnapshot.docs.forEach(voteDoc => batch.delete(voteDoc.ref));
+        await batch.commit();
+
+        // Delete session document
+        await sessionDoc.ref.delete();
+      }
 
       return { success: true };
     } catch (error) {
       console.error('Firestore clearAllData error:', error.message);
-      // Fall through to in-memory storage
     }
   }
 
   // In-memory fallback
-  inMemoryVotes.length = 0;
-  inMemoryWordCounts.clear();
+  inMemorySession = {
+    id: 'local',
+    question: 'What word comes to mind?',
+    wordCounts: {},
+    votes: [],
+  };
 
   return { success: true };
 }
 
 /**
- * Get vote count
- * @returns {Promise<number>}
+ * Get all sessions (for history view)
+ * @returns {Promise<Array>}
  */
-async function getVoteCount() {
+async function getAllSessions() {
   if (db) {
     try {
-      const snapshot = await db.collection('votes').count().get();
-      return snapshot.data().count;
+      const snapshot = await db.collection('sessions')
+        .orderBy('createdAt', 'desc')
+        .get();
+
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
     } catch (error) {
-      console.error('Firestore getVoteCount error:', error.message);
-      // Fall through to in-memory storage
+      console.error('Firestore getAllSessions error:', error.message);
     }
   }
 
-  // In-memory fallback
-  return inMemoryVotes.length;
+  return [inMemorySession];
 }
 
 /**
  * Check if Firestore is connected
- * @returns {boolean}
  */
 function isFirestoreConnected() {
   return db !== null;
 }
 
 /**
- * Get the stop words set (for testing)
- * @returns {Set<string>}
+ * Get stop words set (for testing)
  */
 function getStopWords() {
   return STOP_WORDS;
-}
-
-/**
- * Save the current question to Firestore
- * @param {string} question - The question text
- * @returns {Promise<{success: boolean}>}
- */
-async function saveQuestion(question) {
-  if (db) {
-    try {
-      await db.collection('config').doc('session').set({
-        question: question,
-        updatedAt: new Date(),
-      }, { merge: true });
-      return { success: true };
-    } catch (error) {
-      console.error('Firestore saveQuestion error:', error.message);
-    }
-  }
-  return { success: false };
-}
-
-/**
- * Get the current question from Firestore
- * @returns {Promise<string|null>}
- */
-async function getQuestion() {
-  if (db) {
-    try {
-      const doc = await db.collection('config').doc('session').get();
-      if (doc.exists) {
-        return doc.data().question || null;
-      }
-    } catch (error) {
-      console.error('Firestore getQuestion error:', error.message);
-    }
-  }
-  return null;
 }
 
 // Initialize on module load
@@ -303,16 +332,13 @@ module.exports = {
   initializeFirestore,
   isStopWord,
   normalizeForStorage,
+  createSession,
+  getActiveSession,
   saveVote,
   getTopWords,
-  getAllVotes,
+  getQuestion,
   clearAllData,
-  getVoteCount,
+  getAllSessions,
   isFirestoreConnected,
   getStopWords,
-  saveQuestion,
-  getQuestion,
-  // Export for testing
-  _inMemoryVotes: inMemoryVotes,
-  _inMemoryWordCounts: inMemoryWordCounts,
 };

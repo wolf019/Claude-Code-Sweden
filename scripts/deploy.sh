@@ -4,6 +4,7 @@ set -e
 PROJECT_ID="tom-axberg-ai-dev"
 REGION="europe-north1"
 SERVICE_NAME="wordcloud-app"
+DATABASE_ID="wordcloud-live"
 
 echo "Deploying to Cloud Run..."
 echo "Project: $PROJECT_ID"
@@ -16,7 +17,7 @@ gcloud run deploy $SERVICE_NAME \
   --region $REGION \
   --project $PROJECT_ID \
   --allow-unauthenticated \
-  --set-env-vars "NODE_ENV=production,GCP_PROJECT_ID=$PROJECT_ID" \
+  --set-env-vars "NODE_ENV=production,GCP_PROJECT_ID=$PROJECT_ID,FIRESTORE_DATABASE_ID=$DATABASE_ID" \
   --min-instances 2 \
   --max-instances 20 \
   --memory 1Gi \
