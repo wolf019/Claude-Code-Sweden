@@ -1,0 +1,25 @@
+name: video-creator
+description: Create videos with AI-generated music. Follow the steps in sequence.
+
+dependencies:
+  - remotion-best-practices
+  - elevenlabs-music
+
+steps:
+  - id: concept
+    name: Define Concept
+    file: steps/01-concept.md
+
+  - id: music
+    name: Generate Music Before Video
+    file: steps/02-music.md
+    skill: elevenlabs-music
+
+  - id: compose
+    name: Create Video
+    file: steps/03-compose.md
+    skill: remotion-best-practices
+
+  - id: export
+    name: Render
+    file: steps/04-export.md

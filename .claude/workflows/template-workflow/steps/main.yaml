@@ -1,0 +1,11 @@
+name: e.g. video-creator
+description: e.g. Create videos with AI-generated music. Follow the steps in sequence.
+
+dependencies:
+  - remotion-best-practices
+  - elevenlabs-music
+
+steps:
+  - id: concept
+    name: Define Concept
+    file: steps/01-****.md
